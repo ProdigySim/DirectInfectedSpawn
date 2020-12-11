@@ -678,13 +678,49 @@ void GetGamedata()
 	PrepSDKCall();
 }
 
-void PrepSDKCall()
-{
-	if (hConf == null)
-	{ SetFailState("Unable to find %s.txt gamedata.", GAMEDATA); return; }
+void LoadStringFromAdddress(Address addr, char[] buffer, int maxlength) {
+	int i = 0;
+	while(i < maxlength) {
+		char val = LoadFromAddress(addr + view_as<Address>(i), NumberType_Int8);
+		if(val == 0) {
+			buffer[i] = 0;
+			break;
+		}
+		buffer[i] = val;
+		i++;
+	}
+	if (i >= maxlength) {
+		buffer[maxlength - 1] = 0;
+	}
+}
+void PrepWindowsCreateBotCalls(Address jumpTableAddr) {
+	// We have the address of the jump table, starting at the first PUSH instruction of the
+	// PUSH rel32 (5 bytes)
+	// CALL rel32 (5 bytes)
+	// JUMP rel8 (2 bytes)
+	// repeated pattern.
 	
-	if (g_isSequel)
-	{
+	// Each push is pushing the address of a string onto the stack. Let's grab these strings to identify each case.
+	// "Hunter" / "Smoker" / etc.
+	for(int i = 0; i < 7; i++) {
+		// 12 bytes in PUSH32, CALL32, JMP8.
+		Address caseBase = jumpTableAddr + view_as<Address>(i * 12);
+		Address siStringAddr = view_as<Address>(LoadFromAddress(caseBase + view_as<Address>(1), NumberType_Int32));
+		static char siName[32];
+		LoadStringFromAdddress(siStringAddr, siName, sizeof(siName));
+		// PrintToServer("Found Si %s", siName);
+
+		Address funcRefAddr = caseBase + view_as<Address>(6); // 2nd byte of call, 5+1 byte offset.
+		int funcRelOffset = LoadFromAddress(funcRefAddr, NumberType_Int32);
+		Address callOffsetBase = caseBase + view_as<Address>(10); // first byte of next instruction after the CALL instruction
+		Address nextBotCreatePlayerBotTAddr = callOffsetBase + view_as<Address>(funcRelOffset);
+		PrintToServer("Found NextBotCreatePlayerBot<%s>() @ %08x", siName, nextBotCreatePlayerBotTAddr);
+		int firstByte = LoadFromAddress(nextBotCreatePlayerBotTAddr, NumberType_Int8);
+		PrintToServer("First byte: %02x", firstByte);
+	}
+}
+
+void PrepL4D2CreateBotCalls() {
 		StartPrepSDKCall(SDKCall_Static);
 		if (!PrepSDKCall_SetFromConf(hConf, SDKConf_Signature, NAME_CreateSpitter))
 		{ SetFailState("Unable to find %s signature in gamedata file.", NAME_CreateSpitter); return; }
@@ -711,10 +747,9 @@ void PrepSDKCall()
 		hCreateCharger = EndPrepSDKCall();
 		if (hCreateCharger == null)
 		{ SetFailState("Cannot initialize %s SDKCall, signature is broken.", NAME_CreateCharger); return; }
-	}
-	else
-	{ delete hCreateSpitter; delete hCreateJockey; delete hCreateCharger; }
-	
+}
+
+void PrepL4D1CreateBotCalls() {
 	StartPrepSDKCall(SDKCall_Static);
 	if (!PrepSDKCall_SetFromConf(hConf, SDKConf_Signature, NAME_CreateSmoker))
 	{ SetFailState("Unable to find %s signature in gamedata file.", NAME_CreateSmoker); return; }
@@ -750,6 +785,33 @@ void PrepSDKCall()
 	hCreateTank = EndPrepSDKCall();
 	if (hCreateTank == null)
 	{ SetFailState("Cannot initialize %s SDKCall, signature is broken.", NAME_CreateTank); return; }
+}
+
+void PrepSDKCall()
+{
+	if (hConf == null)
+	{ SetFailState("Unable to find %s.txt gamedata.", GAMEDATA); return; }
+	
+	Address replaceWithBot = GameConfGetAddress(hConf, "NextBotCreatePlayerBot.jumptable");
+	
+	PrintToServer("!!!! Prepping our sdk calls!");
+	if (replaceWithBot != Address_Null && LoadFromAddress(replaceWithBot, NumberType_Int8) == 0x68) {
+		// We're on L4D2 and linux
+		PrintToServer("Windows boizzzz");
+		PrintToServer("Heck yeah %02x", LoadFromAddress(replaceWithBot, NumberType_Int8));
+		PrepWindowsCreateBotCalls(replaceWithBot);
+	}
+	else
+	{
+		if (g_isSequel)
+		{
+			PrepL4D2CreateBotCalls();
+		}
+		else
+		{ delete hCreateSpitter; delete hCreateJockey; delete hCreateCharger; }
+	
+		PrepL4D1CreateBotCalls();
+	}
 	
 	/*StartPrepSDKCall(SDKCall_Player);
 	if (!PrepSDKCall_SetFromConf(hConf, SDKConf_Signature, NAME_RoundRespawn))
