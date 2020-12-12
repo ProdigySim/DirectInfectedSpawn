@@ -689,11 +689,23 @@ void LoadStringFromAdddress(Address addr, char[] buffer, int maxlength) {
 		buffer[i] = val;
 		i++;
 	}
-	if (i >= maxlength) {
-		buffer[maxlength - 1] = 0;
+	buffer[maxlength - 1] = 0;
+}
+
+Handle PrepCreateBotCallFromAddress(Handle hSiFuncTrie, const char[] siName) {
+	Address addr;
+	StartPrepSDKCall(SDKCall_Static);
+	if (!GetTrieValue(hSiFuncTrie, siName, addr) || !PrepSDKCall_SetAddress(addr))
+	{
+		SetFailState("Unable to find NextBotCreatePlayer<%s> address in memory.", siName);
+		return null;
 	}
+	PrepSDKCall_AddParameter(SDKType_String, SDKPass_Pointer);
+	PrepSDKCall_SetReturnInfo(SDKType_CBasePlayer, SDKPass_Pointer);
+	return EndPrepSDKCall();	
 }
 void PrepWindowsCreateBotCalls(Address jumpTableAddr) {
+	Handle hInfectedFuncs = CreateTrie();
 	// We have the address of the jump table, starting at the first PUSH instruction of the
 	// PUSH rel32 (5 bytes)
 	// CALL rel32 (5 bytes)
@@ -708,16 +720,42 @@ void PrepWindowsCreateBotCalls(Address jumpTableAddr) {
 		Address siStringAddr = view_as<Address>(LoadFromAddress(caseBase + view_as<Address>(1), NumberType_Int32));
 		static char siName[32];
 		LoadStringFromAdddress(siStringAddr, siName, sizeof(siName));
-		// PrintToServer("Found Si %s", siName);
 
 		Address funcRefAddr = caseBase + view_as<Address>(6); // 2nd byte of call, 5+1 byte offset.
 		int funcRelOffset = LoadFromAddress(funcRefAddr, NumberType_Int32);
 		Address callOffsetBase = caseBase + view_as<Address>(10); // first byte of next instruction after the CALL instruction
 		Address nextBotCreatePlayerBotTAddr = callOffsetBase + view_as<Address>(funcRelOffset);
 		PrintToServer("Found NextBotCreatePlayerBot<%s>() @ %08x", siName, nextBotCreatePlayerBotTAddr);
-		int firstByte = LoadFromAddress(nextBotCreatePlayerBotTAddr, NumberType_Int8);
-		PrintToServer("First byte: %02x", firstByte);
+		SetTrieValue(hInfectedFuncs, siName, nextBotCreatePlayerBotTAddr);
 	}
+
+	hCreateSmoker = PrepCreateBotCallFromAddress(hInfectedFuncs, "Smoker");
+	if (hCreateSmoker == null)
+	{ SetFailState("Cannot initialize %s SDKCall, address lookup failed.", NAME_CreateSmoker); return; }
+
+	hCreateBoomer = PrepCreateBotCallFromAddress(hInfectedFuncs, "Boomer");
+	if (hCreateBoomer == null)
+	{ SetFailState("Cannot initialize %s SDKCall, address lookup failed.", NAME_CreateBoomer); return; }
+
+	hCreateHunter = PrepCreateBotCallFromAddress(hInfectedFuncs, "Hunter");
+	if (hCreateHunter == null)
+	{ SetFailState("Cannot initialize %s SDKCall, address lookup failed.", NAME_CreateHunter); return; }
+
+	hCreateTank = PrepCreateBotCallFromAddress(hInfectedFuncs, "Tank");
+	if (hCreateTank == null)
+	{ SetFailState("Cannot initialize %s SDKCall, address lookup failed.", NAME_CreateTank); return; }
+	
+	hCreateSpitter = PrepCreateBotCallFromAddress(hInfectedFuncs, "Spitter");
+	if (hCreateSpitter == null)
+	{ SetFailState("Cannot initialize %s SDKCall, address lookup failed.", NAME_CreateSpitter); return; }
+	
+	hCreateJockey = PrepCreateBotCallFromAddress(hInfectedFuncs, "Jockey");
+	if (hCreateJockey == null)
+	{ SetFailState("Cannot initialize %s SDKCall, address lookup failed.", NAME_CreateJockey); return; }
+
+	hCreateCharger = PrepCreateBotCallFromAddress(hInfectedFuncs, "Charger");
+	if (hCreateCharger == null)
+	{ SetFailState("Cannot initialize %s SDKCall, address lookup failed.", NAME_CreateCharger); return; }
 }
 
 void PrepL4D2CreateBotCalls() {
@@ -794,11 +832,8 @@ void PrepSDKCall()
 	
 	Address replaceWithBot = GameConfGetAddress(hConf, "NextBotCreatePlayerBot.jumptable");
 	
-	PrintToServer("!!!! Prepping our sdk calls!");
 	if (replaceWithBot != Address_Null && LoadFromAddress(replaceWithBot, NumberType_Int8) == 0x68) {
 		// We're on L4D2 and linux
-		PrintToServer("Windows boizzzz");
-		PrintToServer("Heck yeah %02x", LoadFromAddress(replaceWithBot, NumberType_Int8));
 		PrepWindowsCreateBotCalls(replaceWithBot);
 	}
 	else
