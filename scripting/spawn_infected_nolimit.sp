@@ -704,10 +704,11 @@ Handle PrepCreateBotCallFromAddress(Handle hSiFuncTrie, const char[] siName) {
 	PrepSDKCall_SetReturnInfo(SDKType_CBasePlayer, SDKPass_Pointer);
 	return EndPrepSDKCall();	
 }
+
 void PrepWindowsCreateBotCalls(Address jumpTableAddr) {
 	Handle hInfectedFuncs = CreateTrie();
 	// We have the address of the jump table, starting at the first PUSH instruction of the
-	// PUSH rel32 (5 bytes)
+	// PUSH mem32 (5 bytes)
 	// CALL rel32 (5 bytes)
 	// JUMP rel8 (2 bytes)
 	// repeated pattern.
